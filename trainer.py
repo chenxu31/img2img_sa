@@ -12,6 +12,7 @@ import os
 class MUNIT_Trainer(nn.Module):
     def __init__(self, hyperparameters):
         super(MUNIT_Trainer, self).__init__()
+        self.hyperparameters = hyperparameters
         lr = hyperparameters['lr']
         self.gen_a = AdaInGenerator(hyperparameters['input_dim_a'], hyperparameters['gen'])  # auto-encoder for domain a
         self.gen_b = AdaInGenerator(hyperparameters['input_dim_b'], hyperparameters['gen'])  # auto-encoder for domain b
@@ -20,8 +21,12 @@ class MUNIT_Trainer(nn.Module):
         self.instancenorm = nn.InstanceNorm2d(512, affine=False)
         self.style_dim = hyperparameters['gen']['style_dim']
         display_size = int(hyperparameters['display_size'])
-        self.s_a = torch.randn(display_size, self.style_dim, 1, 1).cuda()
-        self.s_b = torch.randn(display_size, self.style_dim, 1, 1).cuda()
+        if hyperparameters["gpu"] >= 0:
+            self.s_a = torch.randn(display_size, self.style_dim, 1, 1).cuda()
+            self.s_b = torch.randn(display_size, self.style_dim, 1, 1).cuda()
+        else:
+            self.s_a = torch.randn(display_size, self.style_dim, 1, 1)
+            self.s_b = torch.randn(display_size, self.style_dim, 1, 1)
         beta1 = hyperparameters['beta1']
         beta2 = hyperparameters['beta2']
         dis_params = list(self.dis_a.parameters()) + list(self.dis_b.parameters())
@@ -59,8 +64,12 @@ class MUNIT_Trainer(nn.Module):
 
     def gen_update(self, x_a, x_b, hyperparameters):
         self.gen_opt.zero_grad()
-        s_a = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
-        s_b = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
+        if hyperparameters["gpu"] >= 0:
+            s_a = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
+            s_b = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
+        else:
+            s_a = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1))
+            s_b = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1))
         # encode
         c_a, s_a_prime = self.gen_a.encode(x_a)
         c_b, s_b_prime = self.gen_b.encode(x_b)
@@ -119,8 +128,12 @@ class MUNIT_Trainer(nn.Module):
         self.eval()
         s_a1 = Variable(self.s_a)
         s_b1 = Variable(self.s_b)
-        s_a2 = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
-        s_b2 = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
+        if self.hyperparameters["gpu"] >= 0:
+            s_a2 = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
+            s_b2 = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
+        else:
+            s_a2 = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1))
+            s_b2 = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1))
         x_a_recon, x_b_recon, x_ba1, x_ba2, x_ab1, x_ab2 = [], [], [], [], [], []
         for i in range(x_a.size(0)):
             c_a, s_a_fake = self.gen_a.encode(x_a[i].unsqueeze(0))
@@ -139,8 +152,12 @@ class MUNIT_Trainer(nn.Module):
 
     def dis_update(self, x_a, x_b, hyperparameters):
         self.dis_opt.zero_grad()
-        s_a = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
-        s_b = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
+        if hyperparameters["gpu"] >= 0:
+            s_a = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
+            s_b = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
+        else:
+            s_a = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1))
+            s_b = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1))
         # encode
         c_a, _ = self.gen_a.encode(x_a)
         c_b, _ = self.gen_b.encode(x_b)
@@ -182,10 +199,10 @@ class MUNIT_Trainer(nn.Module):
         print('Resume from iteration %d' % iterations)
         return iterations
 
-    def save(self, snapshot_dir, iterations):
+    def save(self, snapshot_dir, tag):
         # Save generators, discriminators, and optimizers
-        gen_name = os.path.join(snapshot_dir, 'gen_%08d.pt' % (iterations + 1))
-        dis_name = os.path.join(snapshot_dir, 'dis_%08d.pt' % (iterations + 1))
+        gen_name = os.path.join(snapshot_dir, 'gen_%s.pt' % tag)
+        dis_name = os.path.join(snapshot_dir, 'dis_%s.pt' % tag)
         opt_name = os.path.join(snapshot_dir, 'optimizer.pt')
         torch.save({'a': self.gen_a.state_dict(), 'b': self.gen_b.state_dict()}, gen_name)
         torch.save({'a': self.dis_a.state_dict(), 'b': self.dis_b.state_dict()}, dis_name)
