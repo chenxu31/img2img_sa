@@ -20,9 +20,10 @@ import tensorboardX
 import shutil
 import numpy
 import pdb
+from skimage.metrics import structural_similarity as SSIM
 
 
-sys.path.append(os.path.join("..", "util"))
+sys.path.append(r"E:\我的坚果云\sourcecode\python\util")
 import common_metrics
 import common_pelvic_pt as common_pelvic
 
@@ -43,10 +44,6 @@ def main(logger, opts):
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
         device = torch.device("cpu")
 
-    if opts.mini:
-        config["crop_image_height"] //= 4
-        config["crop_image_width"] //= 4
-
     # Setup model and data loader
     if opts.trainer == 'MUNIT':
         trainer = MUNIT_Trainer(config)
@@ -63,21 +60,23 @@ def main(logger, opts):
         trainer.cuda()
 
     test_ids_t = common_pelvic.load_data_ids(opts.data_dir, "testing", "treat")
-    test_data_s, test_data_t, _, _ = common_pelvic.load_test_data(opts.data_dir, mini=opts.mini)
+    test_data_s, test_data_t, _, _ = common_pelvic.load_test_data(opts.data_dir, valid=opts.valid)
 
-    test_st_psnr = numpy.zeros((test_data_s.shape[0], 1), numpy.float32)
-    test_ts_psnr = numpy.zeros((test_data_t.shape[0], 1), numpy.float32)
+    test_st_psnr = numpy.zeros((len(test_data_s),), numpy.float32)
+    test_ts_psnr = numpy.zeros((len(test_data_t),), numpy.float32)
+    test_st_ssim = numpy.zeros((len(test_data_s),), numpy.float32)
+    test_ts_ssim = numpy.zeros((len(test_data_t),), numpy.float32)
     test_st_list = []
     test_ts_list = []
     msg_detail = ""
     with torch.no_grad():
-        for i in range(test_data_s.shape[0]):
-            test_st = numpy.zeros(test_data_s.shape[1:], numpy.float32)
-            test_ts = numpy.zeros(test_data_t.shape[1:], numpy.float32)
-            used = numpy.zeros(test_data_s.shape[1:], numpy.float32)
-            for j in range(test_data_s.shape[1] - config["input_dim_a"] + 1):
-                test_patch_s = torch.tensor(test_data_s[i:i + 1, j:j + config["input_dim_a"], :, :], device=device)
-                test_patch_t = torch.tensor(test_data_t[i:i + 1, j:j + config["input_dim_b"], :, :], device=device)
+        for i in range(len(test_data_s)):
+            test_st = numpy.zeros(test_data_s[i].shape, numpy.float32)
+            test_ts = numpy.zeros(test_data_t[i].shape, numpy.float32)
+            used = numpy.zeros(test_data_s[i].shape, numpy.float32)
+            for j in range(test_data_s[i].shape[0] - config["input_dim_a"] + 1):
+                test_patch_s = torch.tensor(numpy.expand_dims(test_data_s[i][j:j + config["input_dim_a"], :, :], 0), device=device)
+                test_patch_t = torch.tensor(numpy.expand_dims(test_data_t[i][j:j + config["input_dim_b"], :, :], 0), device=device)
 
                 ret_st, ret_ts = trainer.forward(test_patch_s, test_patch_t)
 
@@ -89,21 +88,28 @@ def main(logger, opts):
             test_st /= used
             test_ts /= used
 
+            """
             if opts.output_dir:
                 common_pelvic.save_nii(test_ts, os.path.join(opts.output_dir, "syn_%s.nii.gz" % test_ids_t[i]))
+            """
 
             st_psnr = common_metrics.psnr(test_st, test_data_t[i])
             ts_psnr = common_metrics.psnr(test_ts, test_data_s[i])
+            st_ssim = SSIM(test_st, test_data_t[i])
+            ts_ssim = SSIM(test_ts, test_data_s[i])
 
             test_st_psnr[i] = st_psnr
             test_ts_psnr[i] = ts_psnr
+            test_st_ssim[i] = st_ssim
+            test_ts_ssim[i] = ts_ssim
             test_st_list.append(test_st)
             test_ts_list.append(test_ts)
 
-            msg_detail += "  %s_psnr: %f\n" % (test_ids_t[i], ts_psnr)
+            msg_detail += "  %s_psnr: %f  %s_ssim: %f\n" % (test_ids_t[i], ts_psnr, test_ids_t[i], ts_ssim)
 
-    msg = "  test_st_psnr:%f/%f  test_ts_psnr:%f/%f" % \
-          (test_st_psnr.mean(), test_st_psnr.std(), test_ts_psnr.mean(), test_ts_psnr.std())
+    msg = "test_st_psnr:%f/%f  test_st_ssim:%f/%f  test_ts_psnr:%f/%f  test_ts_ssim:%f/%f" % \
+          (test_st_psnr.mean(), test_st_psnr.std(), test_st_ssim.mean(), test_st_ssim.std(),
+           test_ts_psnr.mean(), test_ts_psnr.std(), test_ts_ssim.mean(), test_ts_ssim.std())
     logger.info(msg)
     logger.info(msg_detail)
 
@@ -113,6 +119,8 @@ def main(logger, opts):
 
         numpy.save(os.path.join(opts.output_dir, "st_psnr.npy"), test_st_psnr)
         numpy.save(os.path.join(opts.output_dir, "ts_psnr.npy"), test_ts_psnr)
+        numpy.save(os.path.join(opts.output_dir, "st_ssim.npy"), test_st_ssim)
+        numpy.save(os.path.join(opts.output_dir, "ts_ssim.npy"), test_ts_ssim)
 
 
 if __name__ == '__main__':
@@ -124,7 +132,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', type=str, default=r'data', help='path of the dataset')
     parser.add_argument('--checkpoint_dir', type=str, default=r'checkpoints', help="checkpoint file dir")
     parser.add_argument('--pretrained_tag', type=str, default='best', choices=['best','final'], help="pretrained file tag")
-    parser.add_argument('--mini', type=int, default=0, help="whether do mini data to avoid memory insufficient issue")
+    parser.add_argument('--valid', type=int, default=1, help="xxx")
 
     opts = parser.parse_args()
 
