@@ -16,7 +16,7 @@ except ImportError: # will be 3.x series
     pass
 import os
 import sys
-import tensorboardX
+from torch.utils.tensorboard import SummaryWriter
 import shutil
 import numpy
 import pdb
@@ -65,7 +65,7 @@ def main(logger, opts):
     if opts.do_validation:
         val_data_s, val_data_t, _ = common_cmf.load_test_data(opts.data_dir)
 
-    train_writer = tensorboardX.SummaryWriter(opts.log_dir)
+    train_writer = SummaryWriter(opts.log_dir)
     if not os.path.exists(opts.checkpoint_dir):
         os.makedirs(opts.checkpoint_dir)
     shutil.copy(opts.config, os.path.join(opts.checkpoint_dir, 'config.yaml'))  # copy config file to output folder
@@ -75,6 +75,9 @@ def main(logger, opts):
     iterations = trainer.resume(checkpoint_directory, hyperparameters=config) if opts.resume else 0
     for it in range(iterations, max_iter):
         images_a, images_b, _ = data_iter.next()
+        
+        if images_a.contiguous().view(config["batch_size"], -1).max(1)[0].min() <= -1 or images_b.contiguous().view(config["batch_size"], -1).max(1)[0].min() <= -1:
+            continue
 
         # Main training code
         trainer.dis_update(images_a, images_b, config)
