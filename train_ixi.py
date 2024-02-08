@@ -21,9 +21,13 @@ import shutil
 import numpy
 import pdb
 import logging
+import platform
 
 
-sys.path.append(os.path.join("..", "util"))
+if platform.system() == 'Windows':
+  sys.path.append(r"E:\我的坚果云\sourcecode\python\util")
+else:
+  sys.path.append("/home/chenxu/我的坚果云/sourcecode/python/util")
 import common_metrics
 import common_ixi
 
