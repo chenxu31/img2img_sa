@@ -36,7 +36,7 @@ def main(logger, opts):
     # Load experiment setting
     config = get_config(opts.config)
     config["gpu"] = opts.gpu
-    max_iter = config['max_iter']
+    max_epochs = config['max_epochs']
     display_size = config['display_size']
     config['vgg_model_path'] = opts.output_path
 
@@ -90,7 +90,7 @@ def main(logger, opts):
 
             # Dump training stats in log file
             if (iterations + 1) % config['log_iter'] == 0:
-                print("Training Progress: %08d/%08d" % (it + 1, max_iter))
+                print("Training Progress: %08d/%08d" % (it + 1, max_epochs))
                 write_loss(it, trainer, train_writer)
 
             if (it + 1) % config['image_display_iter'] == 0:
