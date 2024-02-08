@@ -243,7 +243,11 @@ class Decoder(nn.Module):
         self.model = nn.Sequential(*self.model)
 
     def forward(self, x):
-        return self.model(x)
+        ret = self.model(x)
+
+        ret = torch.clamp(ret, -1., 1.)
+        return ret
+
 
 ##################################################################################
 # Sequential Models
