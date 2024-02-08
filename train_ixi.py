@@ -177,6 +177,7 @@ if __name__ == '__main__':
     parser.add_argument("--resume", action="store_true")
     parser.add_argument('--trainer', type=str, default='MUNIT', help="MUNIT|UNIT")
     parser.add_argument('--gpu', type=int, default=0, help="gpu device id")
+    parser.add_argument('--batch_size', type=int, default=16, help="batch size")
     parser.add_argument('--data_dir', type=str, default=r'data', help='path of the dataset')
     parser.add_argument('--log_dir', type=str, default=r'logs', help="log file dir")
     parser.add_argument('--checkpoint_dir', type=str, default=r'checkpoints', help="checkpoint file dir")
