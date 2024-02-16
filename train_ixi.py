@@ -88,83 +88,83 @@ def main(logger, opts):
             if opts.gpu >= 0:
                 torch.cuda.synchronize()
 
-            # Dump training stats in log file
-            if (iterations + 1) % config['log_iter'] == 0:
-                print("Training Progress: %08d/%08d" % (it + 1, max_epochs))
-                write_loss(it, trainer, train_writer)
+        # Dump training stats in log file
+        if (it + 1) % config['log_iter'] == 0:
+            print("Training Progress: %08d/%08d" % (it + 1, max_epochs))
+            write_loss(it, trainer, train_writer)
 
-            if (it + 1) % config['image_display_iter'] == 0:
-                msg = "Iter: %d" % (it + 1)
+        if (it + 1) % config['image_display_iter'] == 0:
+            msg = "Iter: %d" % (it + 1)
 
-                syn_st, syn_ts = trainer.forward(images_a, images_b)
+            syn_st, syn_ts = trainer.forward(images_a, images_b)
 
-                train_patch_s_np = images_a.cpu().detach().numpy()
-                train_patch_t_np = images_b.cpu().detach().numpy()
-                train_syn_st_np = syn_st.cpu().detach().numpy()
-                train_syn_ts_np = syn_ts.cpu().detach().numpy()
+            train_patch_s_np = images_a.cpu().detach().numpy()
+            train_patch_t_np = images_b.cpu().detach().numpy()
+            train_syn_st_np = syn_st.cpu().detach().numpy()
+            train_syn_ts_np = syn_ts.cpu().detach().numpy()
 
-                gen_images_train = numpy.concatenate([train_patch_s_np, train_syn_st_np, train_syn_ts_np, train_patch_t_np], 3)
-                gen_images_train = common_ixi.generate_display_image(gen_images_train, is_seg=False)
+            gen_images_train = numpy.concatenate([train_patch_s_np, train_syn_st_np, train_syn_ts_np, train_patch_t_np], 3)
+            gen_images_train = common_ixi.generate_display_image(gen_images_train, is_seg=False)
+
+            if opts.log_dir:
+                try:
+                    skimage.io.imsave(os.path.join(opts.log_dir, "gen_images_train.jpg"), gen_images_train)
+                except:
+                    pass
+
+            if opts.do_validation:
+                val_st_psnr = numpy.zeros((val_data_s.shape[0], 1), numpy.float32)
+                val_ts_psnr = numpy.zeros((val_data_t.shape[0], 1), numpy.float32)
+                val_st_list = []
+                val_ts_list = []
+                with torch.no_grad():
+                    for i in range(val_data_s.shape[0]):
+                        val_st = numpy.zeros(val_data_s.shape[1:], numpy.float32)
+                        val_ts = numpy.zeros(val_data_t.shape[1:], numpy.float32)
+                        used = numpy.zeros(val_data_s.shape[1:], numpy.float32)
+                        for j in range(val_data_s.shape[1] - config["input_dim_a"] + 1):
+                            val_patch_s = torch.tensor(val_data_s[i:i + 1, j:j + config["input_dim_a"], :, :], device=device)
+                            val_patch_t = torch.tensor(val_data_t[i:i + 1, j:j + config["input_dim_b"], :, :], device=device)
+
+                            ret_st, ret_ts = trainer.forward(val_patch_s, val_patch_t)
+
+                            val_st[j:j + config["input_dim_a"], :, :] += ret_st.cpu().detach().numpy()[0]
+                            val_ts[j:j + config["input_dim_b"], :, :] += ret_ts.cpu().detach().numpy()[0]
+                            used[j:j + config["input_dim_b"], :, :] += 1
+
+                        assert used.min() > 0
+                        val_st /= used
+                        val_ts /= used
+
+                        st_psnr = common_metrics.psnr(val_st, val_data_t[i])
+                        ts_psnr = common_metrics.psnr(val_ts, val_data_s[i])
+
+                        val_st_psnr[i] = st_psnr
+                        val_ts_psnr[i] = ts_psnr
+                        val_st_list.append(val_st)
+                        val_ts_list.append(val_ts)
+
+                msg += "  val_st_psnr:%f/%f  val_ts_psnr:%f/%f" % \
+                       (val_st_psnr.mean(), val_st_psnr.std(), val_ts_psnr.mean(), val_ts_psnr.std())
+                gen_images_test = numpy.concatenate([val_data_s[0], val_st_list[0], val_ts_list[0], val_data_t[0]], 2)
+                gen_images_test = numpy.expand_dims(gen_images_test, 0).astype(numpy.float32)
+                gen_images_test = common_ixi.generate_display_image(gen_images_test, is_seg=False)
 
                 if opts.log_dir:
                     try:
-                        skimage.io.imsave(os.path.join(opts.log_dir, "gen_images_train.jpg"), gen_images_train)
+                        skimage.io.imsave(os.path.join(opts.log_dir, "gen_images_test.jpg"), gen_images_test)
                     except:
                         pass
 
-                if opts.do_validation:
-                    val_st_psnr = numpy.zeros((val_data_s.shape[0], 1), numpy.float32)
-                    val_ts_psnr = numpy.zeros((val_data_t.shape[0], 1), numpy.float32)
-                    val_st_list = []
-                    val_ts_list = []
-                    with torch.no_grad():
-                        for i in range(val_data_s.shape[0]):
-                            val_st = numpy.zeros(val_data_s.shape[1:], numpy.float32)
-                            val_ts = numpy.zeros(val_data_t.shape[1:], numpy.float32)
-                            used = numpy.zeros(val_data_s.shape[1:], numpy.float32)
-                            for j in range(val_data_s.shape[1] - config["input_dim_a"] + 1):
-                                val_patch_s = torch.tensor(val_data_s[i:i + 1, j:j + config["input_dim_a"], :, :], device=device)
-                                val_patch_t = torch.tensor(val_data_t[i:i + 1, j:j + config["input_dim_b"], :, :], device=device)
+                if val_ts_psnr.mean() > best_psnr:
+                    best_psnr = val_ts_psnr.mean()
 
-                                ret_st, ret_ts = trainer.forward(val_patch_s, val_patch_t)
+                    if best_psnr > opts.psnr_threshold:
+                        trainer.save(opts.checkpoint_dir, "best")
 
-                                val_st[j:j + config["input_dim_a"], :, :] += ret_st.cpu().detach().numpy()[0]
-                                val_ts[j:j + config["input_dim_b"], :, :] += ret_ts.cpu().detach().numpy()[0]
-                                used[j:j + config["input_dim_b"], :, :] += 1
+                msg += "  best_ts_psnr:%f" % best_psnr
 
-                            assert used.min() > 0
-                            val_st /= used
-                            val_ts /= used
-
-                            st_psnr = common_metrics.psnr(val_st, val_data_t[i])
-                            ts_psnr = common_metrics.psnr(val_ts, val_data_s[i])
-
-                            val_st_psnr[i] = st_psnr
-                            val_ts_psnr[i] = ts_psnr
-                            val_st_list.append(val_st)
-                            val_ts_list.append(val_ts)
-
-                    msg += "  val_st_psnr:%f/%f  val_ts_psnr:%f/%f" % \
-                           (val_st_psnr.mean(), val_st_psnr.std(), val_ts_psnr.mean(), val_ts_psnr.std())
-                    gen_images_test = numpy.concatenate([val_data_s[0], val_st_list[0], val_ts_list[0], val_data_t[0]], 2)
-                    gen_images_test = numpy.expand_dims(gen_images_test, 0).astype(numpy.float32)
-                    gen_images_test = common_ixi.generate_display_image(gen_images_test, is_seg=False)
-
-                    if opts.log_dir:
-                        try:
-                            skimage.io.imsave(os.path.join(opts.log_dir, "gen_images_test.jpg"), gen_images_test)
-                        except:
-                            pass
-
-                    if val_ts_psnr.mean() > best_psnr:
-                        best_psnr = val_ts_psnr.mean()
-
-                        if best_psnr > opts.psnr_threshold:
-                            trainer.save(opts.checkpoint_dir, "best")
-
-                    msg += "  best_ts_psnr:%f" % best_psnr
-
-                logger.info(msg)
+            logger.info(msg)
 
         trainer.update_learning_rate()
         trainer.save(opts.checkpoint_dir, "last")
