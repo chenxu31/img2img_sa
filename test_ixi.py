@@ -20,10 +20,14 @@ import tensorboardX
 import shutil
 import numpy
 import pdb
+import platform
 from skimage.metrics import structural_similarity as SSIM
 
 
-sys.path.append(r"E:\我的坚果云\sourcecode\python\util")
+if platform.system() == 'Windows':
+  sys.path.append(r"E:\我的坚果云\sourcecode\python\util")
+else:
+  sys.path.append("/home/chenxu/我的坚果云/sourcecode/python/util")
 import common_metrics
 import common_ixi
 
@@ -59,7 +63,7 @@ def main(logger, opts):
     if opts.gpu >= 0:
         trainer.cuda()
 
-    test_data_t, test_data_s = common_ixi.load_test_data(opts.data_dir, valid=opts.valid)
+    test_data_s, test_data_t = common_ixi.load_test_data(opts.data_dir, "test")
 
     test_st_psnr = numpy.zeros((len(test_data_s),), numpy.float32)
     test_ts_psnr = numpy.zeros((len(test_data_t),), numpy.float32)
@@ -88,7 +92,7 @@ def main(logger, opts):
             test_ts /= used
 
             if opts.output_dir:
-                common_ixi.save_nii(test_ts, os.path.join(opts.output_dir, "syn_%s.nii.gz" % test_ids_t[i]))
+                common_ixi.save_nii(test_ts, os.path.join(opts.output_dir, "syn_ts_%d.nii.gz" % i))
 
             st_psnr = common_metrics.psnr(test_st, test_data_t[i])
             ts_psnr = common_metrics.psnr(test_ts, test_data_s[i])
