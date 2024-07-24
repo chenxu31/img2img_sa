@@ -60,12 +60,14 @@ def main(logger, opts):
         trainer.cuda()
 
     test_ids_t = common_pelvic.load_data_ids(opts.data_dir, "testing", "treat")
-    test_data_s, test_data_t, _, _ = common_pelvic.load_test_data(opts.data_dir, valid=opts.valid)
+    test_data_s, test_data_t, _, _ = common_pelvic.load_test_data_ex(opts.data_dir, valid=opts.valid)
 
     test_st_psnr = numpy.zeros((len(test_data_s),), numpy.float32)
     test_ts_psnr = numpy.zeros((len(test_data_t),), numpy.float32)
     test_st_ssim = numpy.zeros((len(test_data_s),), numpy.float32)
     test_ts_ssim = numpy.zeros((len(test_data_t),), numpy.float32)
+    test_st_mae = numpy.zeros((len(test_data_s),), numpy.float32)
+    test_ts_mae = numpy.zeros((len(test_data_t),), numpy.float32)
     test_st_list = []
     test_ts_list = []
     msg_detail = ""
@@ -97,19 +99,24 @@ def main(logger, opts):
             ts_psnr = common_metrics.psnr(test_ts, test_data_s[i])
             st_ssim = SSIM(test_st, test_data_t[i])
             ts_ssim = SSIM(test_ts, test_data_s[i])
+            st_mae = abs(common_pelvic.restore_hu(test_st) - common_pelvic.restore_hu(test_data_t[i])).mean()
+            ts_mae = abs(common_pelvic.restore_hu(test_ts) - common_pelvic.restore_hu(test_data_s[i])).mean()
 
             test_st_psnr[i] = st_psnr
             test_ts_psnr[i] = ts_psnr
             test_st_ssim[i] = st_ssim
             test_ts_ssim[i] = ts_ssim
+            test_st_mae[i] = st_mae
+            test_ts_mae[i] = ts_mae
             test_st_list.append(test_st)
             test_ts_list.append(test_ts)
 
             msg_detail += "  %s_psnr: %f  %s_ssim: %f\n" % (test_ids_t[i], ts_psnr, test_ids_t[i], ts_ssim)
 
-    msg = "test_st_psnr:%f/%f  test_st_ssim:%f/%f  test_ts_psnr:%f/%f  test_ts_ssim:%f/%f" % \
+    msg = "test_st_psnr:%f/%f  test_st_ssim:%f/%f  test_ts_psnr:%f/%f  test_ts_ssim:%f/%f  test_ts_mae:%f/%f  test_ts_mae:%f/%f" % \
           (test_st_psnr.mean(), test_st_psnr.std(), test_st_ssim.mean(), test_st_ssim.std(),
-           test_ts_psnr.mean(), test_ts_psnr.std(), test_ts_ssim.mean(), test_ts_ssim.std())
+           test_ts_psnr.mean(), test_ts_psnr.std(), test_ts_ssim.mean(), test_ts_ssim.std(),
+           test_ts_mae.mean(), test_ts_mae.std(), test_ts_mae.mean(), test_ts_mae.std())
     logger.info(msg)
     logger.info(msg_detail)
 
@@ -121,6 +128,8 @@ def main(logger, opts):
         numpy.save(os.path.join(opts.output_dir, "ts_psnr.npy"), test_ts_psnr)
         numpy.save(os.path.join(opts.output_dir, "st_ssim.npy"), test_st_ssim)
         numpy.save(os.path.join(opts.output_dir, "ts_ssim.npy"), test_ts_ssim)
+        numpy.save(os.path.join(opts.output_dir, "st_mae.npy"), test_st_mae)
+        numpy.save(os.path.join(opts.output_dir, "ts_mae.npy"), test_ts_mae)
 
 
 if __name__ == '__main__':
